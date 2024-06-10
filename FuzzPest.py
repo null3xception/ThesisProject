@@ -1,6 +1,6 @@
 import customtkinter as ctk
 import tkinter as tk
-from thefuzz import fuzz
+from thefuzz import fuzz, process
 from PIL import Image, ImageTk
 from custom_hovertip import CustomTooltipLabel
 from tkinter import PhotoImage
@@ -53,7 +53,7 @@ pests_treatment = {
 }
 
 
-def match_symptoms(input_symptoms, threshold=100):
+def match_symptoms(input_symptoms, threshold=50):
     results = {}
 
     # Check similarity of input symptoms with symptoms of each pest using fuzz library
@@ -121,10 +121,11 @@ def showMainPage():
     def on_close():
         mainPageWindow.destroy()
         root.deiconify()  
+
     
     mainPageWindow.protocol("WM_DELETE_WINDOW", on_close)
 
-
+    
     mainPageLogo = ctk.CTkImage(light_image=Image.open("fuzzpestlogo.png"),
                     dark_image=Image.open("fuzzpestlogo.png"),
                     size=(100, 100))
@@ -132,11 +133,9 @@ def showMainPage():
     mainPageLogoWidget.grid(row=0, column=0, columnspan=2, pady=10, padx=10 ,sticky=ctk.W)
 
     mainPagetitle = ctk.CTkLabel(mainPageWindow, text="FuzzPest", font=title_font, fg_color="#304908", bg_color="#304908", text_color="#c7d49c")
-    mainPagetitle.grid(row=0, column=0, columnspan=7, padx=(150,10), sticky=ctk.W)
+    mainPagetitle.grid(row=0, column=1, columnspan=7, padx=(150,10), sticky=ctk.W)
 
-    mainPageHelpButton = ctk.CTkButton(mainPageWindow, text="?", border_width=2, fg_color="#304908", bg_color="#304908", border_color="#c7d49c", font=subheader_font, 
-                                        hover_color="#789b1d", width=30, height=30, corner_radius=30)
-    mainPageHelpButton.grid(row=0, column=7, pady=10, padx=10 ,sticky=ctk.E)
+
 
     #------------------SYMPTOMS SECTION ---------------------------------------------
 
@@ -178,13 +177,103 @@ def showMainPage():
             for pest_name in pest_buttons:
                 disable_pest_buttons(pest_name)
             return
+        
+        common_pests = set()
+        common_treatments = []
+
+        # Collect common treatments
         matches = match_symptoms(input_symptoms)
         for pest_name, button in pest_buttons.items():
             if any(pest_name in match for match in matches):
-                button.configure(state="normal", fg_color="#59761c", hover_color="#789b1d")
+                button.configure(state="normal", fg_color="#b4496b", hover_color="#da5881")
                 button.bind("<Button-1>", lambda event, pest_name=pest_name: on_pest_button_click(pest_name))
+                common_pests.add(pest_name)
+                common_treatments.extend(pests_treatment.get(pest_name, []))
             else:
-                button.configure(state="disabled", fg_color="#b4496b")
+                button.configure(state="disabled", fg_color="#496f0c")
+                button.unbind("<Button-1>")
+        
+        # Calculate similarity scores for treatments
+        scored_treatments = {}
+        for treatment in common_treatments:
+            score = 0
+            for input_treatment in input_symptoms:
+                score += fuzz.token_sort_ratio(treatment, input_treatment)
+            scored_treatments[treatment] = score
+
+        # Sort treatments based on their scores
+        sorted_treatments = sorted(scored_treatments.items(), key=lambda x: x[1], reverse=True)
+
+        # Select top 6 treatments
+        top_six_treatments = dict(sorted_treatments[:6])
+
+        # Clear previous common treatment labels in detail_frame
+        for widget in detail_frame.grid_slaves():
+            widget.destroy()
+
+        # Create the label
+        # Create the label
+        legend_label = ctk.CTkLabel(detail_frame, font=subheader_font, bg_color="#304908")
+        legend_label.grid(row=0, column=0, columnspan=3, pady=(10, 20), sticky="nsew")
+
+        # Set the text with background colors to simulate text coloring
+        legend_label_text = "Pest Highlighted in RED are identified on the selected symptoms"
+        legend_label.configure(text=legend_label_text, text_color="#b4496b")
+
+
+        common_treatment_label = ctk.CTkLabel(detail_frame, text="Common Treatments Available:", font=header_font)
+        common_treatment_label.grid(row=1, column=0, columnspan=3, pady=(10, 20), sticky="nsew")
+
+        def show_popup(treatment):
+            description = treatment_descriptions.get(treatment, "No description available")
+            if description == "No description available":
+                return  # Don't show popup if no description is available
+            
+            popup_window = ctk.CTkToplevel()
+            popup_window.title("Treatment Details")
+
+            # Set the size of the popup window
+            popup_window.geometry("800x600")
+            popup_window.config(background="#304908")
+    
+            popup_label = ctk.CTkLabel(popup_window, text=description, font=subheader_font, width=700, wraplength=700, fg_color="#304908")
+            popup_label.pack(padx=10, pady=60)
+
+            # Calculate the position to center the popup window
+            screen_width = popup_window.winfo_screenwidth()
+            screen_height = popup_window.winfo_screenheight()
+            x_coordinate = (screen_width - 800) // 2
+            y_coordinate = (screen_height - 600) // 2
+            
+            # Set the position of the popup window
+            popup_window.geometry(f"+{x_coordinate}+{y_coordinate}")
+            
+            # Bring the popup window to the front and keep it in front
+            popup_window.lift()
+            popup_window.grab_set()
+
+        for idx, (treatment, score) in enumerate(top_six_treatments.items()):
+            row_position = idx // 3
+            column_position = idx % 3
+
+            treatment_frame = ctk.CTkFrame(detail_frame, width=1600, corner_radius=10, fg_color="#59761c")
+            treatment_frame.grid(row=row_position+2, column=column_position, padx=5, pady=10, sticky="nsew")
+            treatment_frame.grid_propagate(False)
+
+            treatment_label = ctk.CTkLabel(treatment_frame, text=f"{treatment}", font=subheader_font, wraplength=450, width=500, justify="center")
+            treatment_label.pack(pady=5, padx=5)
+            treatment_label.pack_propagate(False)
+
+            def on_frame_click(event, treatment=treatment):
+                print(f"Treatment clicked: {treatment}")
+                show_popup(treatment)
+
+            treatment_label.bind("<Button-1>", lambda event, treatment=treatment: on_frame_click(event, treatment))
+
+        # Print common treatments
+        print("Common Treatments:")
+        for treatment, score in top_six_treatments.items():
+            print(f"- {treatment}: {score}")
 
     symptoms_row1 = ["Stunted Growth", "Dead Heart", "Dry Leaves", "Yellow Leaves", "Wilting", 
                 "Broken Stems", "Lodging"]
@@ -193,6 +282,7 @@ def showMainPage():
     
     mainPageWindow.grid_columnconfigure(0, weight=1)
     mainPageWindow.grid_columnconfigure(8, weight=1)
+
 
     label = ctk.CTkLabel(mainPageWindow, text="Select Symptoms Below:", font=subheader_font, fg_color="#304908", bg_color="#304908", text_color="#c7d49c")
     label.grid(row=1, column=2, columnspan=4, padx=100, pady=10, sticky="ew")
@@ -254,13 +344,13 @@ def showMainPage():
         image = ImageTk.PhotoImage(resized_image)
 
         # Create a frame to contain the image
-        frame = ctk.CTkFrame(mainPageWindow, bg_color="#b4496b", fg_color="#b4496b")
+        frame = ctk.CTkFrame(mainPageWindow, bg_color="#496f0c", fg_color="#496f0c")
         frame.grid_propagate(False)  # Disable auto-resizing of the frame
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
 
         # Create a button to display the image
-        button = ctk.CTkButton(frame, image=image, border_width=0, bg_color="#304908", fg_color="#b4496b", compound="top", text=pest_name, font=text_font_bold, width=250, height=250, state="disabled")
+        button = ctk.CTkButton(frame, image=image, border_width=0, bg_color="#304908", fg_color="#496f0c", compound="top", text=pest_name, font=text_font_bold, width=250, height=250, state="disabled")
         button.grid(row=0, column=0, sticky="nsew")
 
         # Keep a reference to the image to prevent garbage collection
@@ -333,7 +423,9 @@ def showMainPage():
         }
 
         def show_pest_details(pest):
-            # Add pest label
+            for widget in detail_frame.grid_slaves():
+                widget.destroy()
+
             pest_label = ctk.CTkLabel(detail_frame, text=f"Recommended Treatment for: {pest}", font=header_font, wraplength=450, width=500)
             pest_label.grid(row=1, column=1, columnspan=3, pady=(10, 20), sticky="nsew")
 
@@ -367,39 +459,38 @@ def showMainPage():
                 popup_window.lift()
                 popup_window.grab_set()
 
-            # Use grid layout for treatment frames
-            for idx, treatment in enumerate(treatments[:5]):  # Display up to five treatments
+            for idx, treatment in enumerate(treatments[:6]):
                 row_position = 2 if idx < 3 else 3
                 column_position = idx if idx < 3 else idx - 3
 
                 treatment_frame = ctk.CTkFrame(detail_frame, width=1600, corner_radius=10, fg_color="#59761c")
                 treatment_frame.grid(row=row_position, column=column_position + 1, padx=5, pady=10, sticky="nsew")
-                treatment_frame.grid_propagate(False)  # Prevent the frame from resizing based on its contents
+                treatment_frame.grid_propagate(False)
 
                 treatment_label = ctk.CTkLabel(treatment_frame, text=treatment, font=subheader_font, wraplength=450, width=500, justify="center")
                 treatment_label.pack(pady=5, padx=5)
                 treatment_label.pack_propagate(False)
 
-                def on_frame_click(event, treatment):
+                def on_frame_click(event, treatment=treatment):
                     print(f"Treatment clicked: {treatment}")
                     show_popup(treatment)
 
-                # Bind click event to treatment frame
                 treatment_label.bind("<Button-1>", lambda event, treatment=treatment: on_frame_click(event, treatment))
-            
-               # Adjust column weights to center rows
-            for col in range(5):
+
+            for col in range(6):
                 detail_frame.columnconfigure(col, weight=1)
+
 
 
         def disable_pest_buttons(pest_name):
             button = pest_buttons.get(pest_name)
             if button:
-                button.configure(state="disabled", fg_color="#b4496b")
+                button.configure(state="disabled", fg_color="#496f0c")
                 button.unbind("<Button-1>")
 
         def on_pest_button_click(pest_name):
             show_pest_details(pest_name)
+
 
         # Example setup for the detail frame
         detail_frame = ctk.CTkFrame(mainPageWindow, width=1600, height=325, corner_radius=10, fg_color="#304908")
